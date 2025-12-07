@@ -33,7 +33,7 @@ const loadState = () => {
       return {
         folders: parsed.folders || INITIAL_FOLDERS,
         tasks: parsed.tasks || INITIAL_TASKS,
-        config: parsed.config || { claudeKey: '', canvasUrl: '', canvasToken: '', googleToken: '' }
+        config: parsed.config || { openaiKey: '', canvasUrl: '', canvasToken: '', googleToken: '' }
       };
     }
   } catch (e) {
@@ -42,11 +42,11 @@ const loadState = () => {
   return {
     folders: INITIAL_FOLDERS,
     tasks: INITIAL_TASKS,
-    config: { claudeKey: '', canvasUrl: '', canvasToken: '', googleToken: '' }
+    config: { openaiKey: '', canvasUrl: '', canvasToken: '', googleToken: '' }
   };
 };
 
-// --- AI Service with Claude API ---
+// --- AI Service with OpenAI API ---
 const AIService = {
   async generatePlan(apiKey, text, currentFolders) {
     if (!text) return null;
@@ -82,7 +82,7 @@ OUTPUT JSON FORMAT (no markdown, just valid JSON):
       "title": "Task title starting with action verb",
       "folderName": "Existing or new folder name",
       "date": "YYYY-MM-DD",
-      "important": true/false,
+      "important": true,
       "description": "Additional context or notes"
     }
   ]
@@ -98,11 +98,11 @@ USER'S BRAIN DUMP:
           newFolders: [],
           suggestedTasks: [
             {
-              title: 'Demo: Add your Claude API key in settings',
+              title: 'Demo: Add your OpenAI API key in settings',
               folderName: 'Inbox',
               date: today,
               important: true,
-              description: 'Go to Settings and add your Claude API key to enable AI features'
+              description: 'Go to Settings and add your OpenAI API key to enable AI features'
             }
           ]
         });
@@ -110,18 +110,16 @@ USER'S BRAIN DUMP:
     }
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
+          'Authorization': `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2048,
-          messages: [{ role: 'user', content: prompt }]
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' }
         })
       });
 
@@ -131,13 +129,10 @@ USER'S BRAIN DUMP:
       }
 
       const data = await res.json();
-      const textRes = data.content[0].text;
+      const textRes = data.choices[0].message.content;
 
       // Parse JSON from response
-      const jsonMatch = textRes.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found in response');
-
-      const parsed = JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(textRes);
       return parsed;
 
     } catch (e) {
@@ -166,35 +161,33 @@ TODAY: ${today}
 EMAILS:
 ${JSON.stringify(snippets, null, 2)}
 
-OUTPUT JSON (array of tasks):
-[
-  { "title": "Action verb + task", "description": "Context from email", "date": "YYYY-MM-DD", "important": false }
-]
+OUTPUT JSON (object with tasks array):
+{
+  "tasks": [
+    { "title": "Action verb + task", "description": "Context from email", "date": "YYYY-MM-DD", "important": false }
+  ]
+}
 
-Return empty array [] if no actionable items found.`;
+Return {"tasks": []} if no actionable items found.`;
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
+          'Authorization': `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1024,
-          messages: [{ role: 'user', content: prompt }]
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' }
         })
       });
 
       const data = await res.json();
-      const textRes = data.content[0].text;
-      const jsonMatch = textRes.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) return [];
-
-      return JSON.parse(jsonMatch[0]);
+      const textRes = data.choices[0].message.content;
+      const parsed = JSON.parse(textRes);
+      return parsed.tasks || [];
     } catch (e) {
       console.error("Gmail AI Error:", e);
       return [];
@@ -238,27 +231,22 @@ OUTPUT JSON:
 }`;
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
+          'Authorization': `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2048,
-          messages: [{ role: 'user', content: prompt }]
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' }
         })
       });
 
       const data = await res.json();
-      const textRes = data.content[0].text;
-      const jsonMatch = textRes.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found');
-
-      return JSON.parse(jsonMatch[0]);
+      const textRes = data.choices[0].message.content;
+      return JSON.parse(textRes);
     } catch (e) {
       console.error("Granola AI Error:", e);
       throw e;
@@ -681,7 +669,7 @@ export default function PowerTodoApp() {
   };
 
   const handleGmailSync = async () => {
-    const { googleToken, claudeKey } = state.config;
+    const { googleToken, openaiKey } = state.config;
 
     if (!googleToken) {
       dispatch({ type: 'SET_MODAL', payload: { type: 'settings' } });
@@ -717,8 +705,8 @@ export default function PowerTodoApp() {
       }
 
       let extractedTasks = [];
-      if (claudeKey) {
-        extractedTasks = await AIService.processGmailSnippets(claudeKey, snippets);
+      if (openaiKey) {
+        extractedTasks = await AIService.processGmailSnippets(openaiKey, snippets);
       } else {
         extractedTasks = snippets.slice(0, 3).map((s, i) => ({
           title: `Reply to: ${s.snippet.substring(0, 40)}...`,
@@ -766,9 +754,9 @@ export default function PowerTodoApp() {
     try {
       let result;
       if (type === 'granola') {
-        result = await AIService.processGranolaNotes(state.config.claudeKey, input);
+        result = await AIService.processGranolaNotes(state.config.openaiKey, input);
       } else {
-        result = await AIService.generatePlan(state.config.claudeKey, input, state.folders);
+        result = await AIService.generatePlan(state.config.openaiKey, input, state.folders);
       }
 
       const processed = {
@@ -1126,15 +1114,15 @@ export default function PowerTodoApp() {
               {state.modal.type === 'settings' && (
                 <div className="space-y-4">
                   <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase">Claude API Key</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase">OpenAI API Key</label>
                     <input
                       type="password"
-                      value={state.config.claudeKey}
-                      onChange={e => dispatch({ type: 'UPDATE_CONFIG', payload: { claudeKey: e.target.value } })}
+                      value={state.config.openaiKey}
+                      onChange={e => dispatch({ type: 'UPDATE_CONFIG', payload: { openaiKey: e.target.value } })}
                       className="w-full border p-2 rounded mt-1 text-sm"
-                      placeholder="sk-ant-..."
+                      placeholder="sk-proj-..."
                     />
-                    <p className="text-xs text-slate-400 mt-1">Required for AI features. Get one at console.anthropic.com</p>
+                    <p className="text-xs text-slate-400 mt-1">Required for AI features. Get one at platform.openai.com</p>
                   </div>
 
                   <div className="bg-blue-50 p-3 rounded border border-blue-100">
